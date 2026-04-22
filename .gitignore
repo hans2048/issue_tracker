@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+issue_tracker.db
+uploads/
+streamlit_log.txt
+.pytest_cache/
