@@ -1,5 +1,9 @@
 import streamlit as st
 import os
+import sys
+
+# Ensure the parent directory is in sys.path so 'src' can be imported
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.database.db import init_db, get_all_groups
 from src.utils.auth import login, signup, logout
