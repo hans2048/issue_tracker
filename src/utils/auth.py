@@ -1,6 +1,6 @@
 import bcrypt
 import streamlit as st
-from src.database.db import get_user_by_username, create_user
+from src.database.db import get_user_by_username, create_user, log_activity
 
 def hash_password(password: str) -> str:
     """Hashes a password using bcrypt."""
@@ -24,6 +24,10 @@ def login(username, password):
         st.session_state['username'] = user['username']
         st.session_state['is_system_admin'] = bool(user['is_system_admin'])
         st.session_state['group_id'] = user['group_id']
+
+        # Log the login activity
+        log_activity(user['id'], 'LOGIN')
+
         return True
     return False
 

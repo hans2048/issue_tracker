@@ -106,6 +106,44 @@ def init_db():
     )
     ''')
 
+    # Activity Logs
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS Activity_Logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        action_type TEXT NOT NULL, -- e.g., 'LOGIN', 'VIEW_DASHBOARD', 'VIEW_ISSUE_LIST'
+        action_detail TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES Users (id)
+    )
+    ''')
+
+    # Notices
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS Notices (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        created_by INTEGER,
+        is_active BOOLEAN DEFAULT 1,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (created_by) REFERENCES Users (id)
+    )
+    ''')
+
+    # User Notice Reads (다시 보지 않기)
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS User_Notice_Reads (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER,
+        notice_id INTEGER,
+        read_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES Users (id),
+        FOREIGN KEY (notice_id) REFERENCES Notices (id),
+        UNIQUE(user_id, notice_id)
+    )
+    ''')
+
     # Insert default groups if not exist
     c.execute("SELECT COUNT(*) FROM User_Groups")
     if c.fetchone()[0] == 0:
@@ -352,3 +390,101 @@ def get_attachments(issue_id):
     attachments = c.fetchall()
     conn.close()
     return attachments
+
+# --- Activity Logging ---
+def log_activity(user_id, action_type, action_detail=None):
+    if not user_id:
+        return
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO Activity_Logs (user_id, action_type, action_detail)
+        VALUES (?, ?, ?)
+    ''', (user_id, action_type, action_detail))
+    conn.commit()
+    conn.close()
+
+def get_activity_stats():
+    conn = get_connection()
+    c = conn.cursor()
+    # Get total logins and page views
+    c.execute('''
+        SELECT action_type, COUNT(*) as count
+        FROM Activity_Logs
+        GROUP BY action_type
+        ORDER BY count DESC
+    ''')
+    stats = c.fetchall()
+
+    # Get daily logins
+    c.execute('''
+        SELECT date(created_at) as log_date, COUNT(*) as count
+        FROM Activity_Logs
+        WHERE action_type = 'LOGIN'
+        GROUP BY date(created_at)
+        ORDER BY log_date ASC
+    ''')
+    daily_logins = c.fetchall()
+    conn.close()
+    return stats, daily_logins
+
+# --- Notices ---
+def create_notice(title, content, created_by):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        INSERT INTO Notices (title, content, created_by)
+        VALUES (?, ?, ?)
+    ''', (title, content, created_by))
+    conn.commit()
+    conn.close()
+
+def update_notice_status(notice_id, is_active):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('UPDATE Notices SET is_active = ? WHERE id = ?', (is_active, notice_id))
+    conn.commit()
+    conn.close()
+
+def get_all_notices():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT n.*, u.username as author_name
+        FROM Notices n
+        LEFT JOIN Users u ON n.created_by = u.id
+        ORDER BY n.created_at DESC
+    ''')
+    notices = c.fetchall()
+    conn.close()
+    return notices
+
+def get_unread_notices_for_user(user_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute('''
+        SELECT n.*
+        FROM Notices n
+        WHERE n.is_active = 1
+        AND n.id NOT IN (
+            SELECT notice_id FROM User_Notice_Reads WHERE user_id = ?
+        )
+        ORDER BY n.created_at DESC
+    ''', (user_id,))
+    notices = c.fetchall()
+    conn.close()
+    return notices
+
+def mark_notice_read(user_id, notice_id):
+    conn = get_connection()
+    c = conn.cursor()
+    try:
+        c.execute('''
+            INSERT INTO User_Notice_Reads (user_id, notice_id)
+            VALUES (?, ?)
+        ''', (user_id, notice_id))
+        conn.commit()
+    except sqlite3.IntegrityError:
+        pass # Already read
+    finally:
+        conn.close()

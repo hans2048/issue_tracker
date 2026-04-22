@@ -7,6 +7,8 @@ from src.ui.dashboard import render_dashboard
 from src.ui.issue_list import render_issue_list
 from src.ui.issue_detail import render_issue_create, render_issue_detail
 from src.ui.admin import render_admin_dashboard
+from src.ui.notices import check_and_show_notices, render_notice_history
+from src.database.db import log_activity
 
 # Ensure database is initialized
 if not os.path.exists('issue_tracker.db'):
@@ -68,6 +70,9 @@ def render_auth_page():
                         st.error("이미 존재하는 Username 입니다.")
 
 def render_main_app():
+    # Check for notices on load
+    check_and_show_notices()
+
     # Sidebar navigation
     with st.sidebar:
         st.write(f"환영합니다, **{st.session_state['username']}**님!")
@@ -89,6 +94,10 @@ def render_main_app():
             st.session_state['current_view'] = 'New Issue'
             st.rerun()
 
+        if st.button("공지사항 (Notices)", use_container_width=True):
+            st.session_state['current_view'] = 'Notices'
+            st.rerun()
+
         if st.session_state.get('is_system_admin') or has_admin_projects():
             if st.button("관리자 메뉴 (Admin)", use_container_width=True):
                 st.session_state['current_view'] = 'Admin'
@@ -102,6 +111,11 @@ def render_main_app():
     # Route to the selected view
     view = st.session_state.get('current_view', 'Dashboard')
 
+    # Log page view if changed (basic analytics)
+    if 'last_view' not in st.session_state or st.session_state['last_view'] != view:
+        log_activity(st.session_state.get('user_id'), f'VIEW_{view.upper().replace(" ", "_")}')
+        st.session_state['last_view'] = view
+
     if view == 'Dashboard':
         render_dashboard()
     elif view == 'Issue List':
@@ -110,6 +124,8 @@ def render_main_app():
         render_issue_create()
     elif view == 'Issue Detail':
         render_issue_detail()
+    elif view == 'Notices':
+        render_notice_history()
     elif view == 'Admin':
         render_admin_dashboard()
 
