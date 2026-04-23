@@ -53,15 +53,24 @@ def render_issue_list():
         on_select="rerun"
     )
 
-    # When a row is selected via click, show the info and a button to view details
+    # When a row is selected via click, store it in session state so the button click doesn't lose it
     if event.selection.rows:
         selected_index = event.selection.rows[0]
-        selected_issue_id = df_display.iloc[selected_index]['id']
-        selected_issue_title = df_display.iloc[selected_index]['title']
+        st.session_state['temp_selected_issue_id'] = df_display.iloc[selected_index]['id']
+        st.session_state['temp_selected_issue_title'] = df_display.iloc[selected_index]['title']
+    else:
+        if 'temp_selected_issue_id' in st.session_state:
+            del st.session_state['temp_selected_issue_id']
+            del st.session_state['temp_selected_issue_title']
 
-        st.success(f"선택된 이슈: #{selected_issue_id} - {selected_issue_title}")
+    if 'temp_selected_issue_id' in st.session_state:
+        issue_id = st.session_state['temp_selected_issue_id']
+        issue_title = st.session_state['temp_selected_issue_title']
 
-        if st.button("상세 보기 (View Details)", type="primary"):
+        st.success(f"선택된 이슈: #{issue_id} - {issue_title}")
+
+        def view_details():
             st.session_state['current_view'] = 'Issue Detail'
-            st.session_state['selected_issue_id'] = selected_issue_id
-            st.rerun()
+            st.session_state['selected_issue_id'] = st.session_state['temp_selected_issue_id']
+
+        st.button("상세 보기 (View Details)", type="primary", on_click=view_details)

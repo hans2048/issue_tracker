@@ -14,12 +14,16 @@ from src.ui.admin import render_admin_dashboard
 from src.ui.notices import check_and_show_notices, render_notice_history
 from src.database.db import log_activity
 
+from src.database.db import seed_sample_data
+
 # Ensure database is initialized
 if not os.path.exists('issue_tracker.db'):
     init_db()
+    seed_sample_data()
 else:
     # Just in case we need to make sure default data is in place
     init_db()
+
 
 st.set_page_config(page_title="Issue Tracker", layout="wide")
 

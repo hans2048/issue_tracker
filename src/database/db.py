@@ -33,6 +33,7 @@ def init_db():
         password_hash TEXT NOT NULL,
         is_system_admin BOOLEAN DEFAULT 0,
         group_id INTEGER,
+        last_project_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (group_id) REFERENCES User_Groups (id)
     )
@@ -74,6 +75,7 @@ def init_db():
         priority TEXT DEFAULT 'Medium', -- High, Medium, Low
         due_date DATE,
         reject_reason TEXT,
+        resolution_text TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (project_id) REFERENCES Projects (id),
@@ -89,6 +91,7 @@ def init_db():
         issue_id INTEGER,
         filename TEXT NOT NULL,
         file_path TEXT NOT NULL,
+        attachment_type TEXT DEFAULT 'issue',
         FOREIGN KEY (issue_id) REFERENCES Issues (id)
     )
     ''')
@@ -529,3 +532,86 @@ def remove_project_member(project_id, user_id):
     c.execute("DELETE FROM Project_Members WHERE project_id = ? AND user_id = ?", (project_id, user_id))
     conn.commit()
     conn.close()
+
+def seed_sample_data():
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM Users")
+    user_count = c.fetchone()[0]
+    conn.close()
+
+    if user_count > 0:
+        return
+
+    print("Seeding sample data...")
+    from src.utils.auth import hash_password
+    import datetime
+
+    # 1. Create standard groups
+    groups = [
+        ("IT Support", "IT 인프라 및 시스템 관리"),
+        ("Development", "소프트웨어 개발"),
+        ("QA", "품질 보증")
+    ]
+    conn = get_connection()
+    c = conn.cursor()
+    for g, desc in groups:
+        try:
+            c.execute("INSERT INTO User_Groups (group_name, description) VALUES (?, ?)", (g, desc))
+        except sqlite3.IntegrityError:
+            pass
+    conn.commit()
+    conn.close()
+
+    # 2. Create sample users
+    users_data = [
+        ("admin", "admin@company.com", "admin123", True, 1), # IT Support
+        ("user1", "user1@company.com", "user123", False, 2), # Development
+        ("user2", "user2@company.com", "user123", False, 2), # Development
+        ("user3", "user3@company.com", "user123", False, 3)  # QA
+    ]
+
+    for username, email, pwd, is_sys, gid in users_data:
+        create_user(username, email, hash_password(pwd), is_sys, gid)
+
+    admin_user = get_user_by_username("admin")
+    u1 = get_user_by_username("user1")
+    u2 = get_user_by_username("user2")
+    u3 = get_user_by_username("user3")
+
+    # 3. Create a sample project
+    create_project("신규 서비스 개발 (New Service)", "차세대 플랫폼 개발 프로젝트")
+    projects = get_all_projects()
+    if not projects:
+        return
+    pid = projects[0]['id']
+
+    # Assign members
+    add_project_member(pid, admin_user['id'], "Admin")
+    add_project_member(pid, u1['id'], "Admin") # Project Admin
+    add_project_member(pid, u2['id'], "Read/Write")
+    add_project_member(pid, u3['id'], "Read Only")
+
+    # Update last_project
+    conn = get_connection()
+    c = conn.cursor()
+    for uid in [admin_user['id'], u1['id'], u2['id'], u3['id']]:
+        c.execute("UPDATE Users SET last_project_id = ? WHERE id = ?", (pid, uid))
+    conn.commit()
+    conn.close()
+
+    # 4. Create 3 issues per user
+    users_objs = [admin_user, u1, u2, u3]
+    for idx, u in enumerate(users_objs):
+        for i in range(1, 4):
+            due = (datetime.datetime.now() + datetime.timedelta(days=i*5)).date()
+            issue_id = create_issue(
+                project_id=pid,
+                author_id=u['id'],
+                title=f"{u['username']}님의 {i}번째 샘플 이슈",
+                description=f"이것은 {u['username']}님이 작성한 {i}번째 테스트 이슈입니다.\n기능 테스트용으로 생성되었습니다.",
+                priority="Medium" if i % 2 == 0 else "High",
+                due_date=due,
+                status="Pending"
+            )
+            add_revision(issue_id, u['id'], "초기 이슈 생성")
