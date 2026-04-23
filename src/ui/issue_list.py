@@ -53,10 +53,15 @@ def render_issue_list():
         on_select="rerun"
     )
 
-    # When a row is selected via click
+    # When a row is selected via click, show the info and a button to view details
     if event.selection.rows:
         selected_index = event.selection.rows[0]
         selected_issue_id = df_display.iloc[selected_index]['id']
-        st.session_state['current_view'] = 'Issue Detail'
-        st.session_state['selected_issue_id'] = selected_issue_id
-        st.rerun()
+        selected_issue_title = df_display.iloc[selected_index]['title']
+
+        st.success(f"선택된 이슈: #{selected_issue_id} - {selected_issue_title}")
+
+        if st.button("상세 보기 (View Details)", type="primary"):
+            st.session_state['current_view'] = 'Issue Detail'
+            st.session_state['selected_issue_id'] = selected_issue_id
+            st.rerun()
