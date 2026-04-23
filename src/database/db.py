@@ -349,13 +349,39 @@ def get_all_issues():
     return issues
 
 # --- Revisions and Attachments ---
-def add_revision(issue_id, modified_by, change_summary):
+def add_revision(issue_id, modified_by, change_summary, old_content=None, new_content=None, attachment_changes=None):
     conn = get_connection()
     c = conn.cursor()
-    c.execute('''
-        INSERT INTO Issue_Revisions (issue_id, modified_by, change_summary)
-        VALUES (?, ?, ?)
-    ''', (issue_id, modified_by, change_summary))
+
+    # Check if revision_no exists, if not ignore, if yes add it
+    try:
+        c.execute("SELECT COUNT(*) FROM Issue_Revisions WHERE issue_id = ?", (issue_id,))
+        count = c.fetchone()[0]
+        revision_no = f"R{count + 1:02d}"
+    except Exception:
+        revision_no = None
+
+    # If full JSON content is not explicitly provided, we will capture it ourselves.
+    if old_content is None and new_content is None:
+        c.execute("SELECT * FROM Issues WHERE id = ?", (issue_id,))
+        current_state = c.fetchone()
+        if current_state:
+            import json
+            state_dict = dict(current_state)
+            new_content = json.dumps(state_dict, default=str)
+
+    try:
+        c.execute('''
+            INSERT INTO Issue_Revisions (issue_id, modified_by, change_summary, old_content, new_content, attachment_changes, revision_no)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (issue_id, modified_by, change_summary, old_content, new_content, attachment_changes, revision_no))
+    except sqlite3.OperationalError:
+        # Fallback if columns don't exist yet
+        c.execute('''
+            INSERT INTO Issue_Revisions (issue_id, modified_by, change_summary)
+            VALUES (?, ?, ?)
+        ''', (issue_id, modified_by, change_summary))
+
     conn.commit()
     conn.close()
 
@@ -488,3 +514,18 @@ def mark_notice_read(user_id, notice_id):
         pass # Already read
     finally:
         conn.close()
+
+
+def update_project_member_role(project_id, user_id, new_role):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE Project_Members SET project_role = ? WHERE project_id = ? AND user_id = ?", (new_role, project_id, user_id))
+    conn.commit()
+    conn.close()
+
+def remove_project_member(project_id, user_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM Project_Members WHERE project_id = ? AND user_id = ?", (project_id, user_id))
+    conn.commit()
+    conn.close()
