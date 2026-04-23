@@ -1,21 +1,30 @@
 import streamlit as st
 import os
+import sys
+
+# Ensure the parent directory is in sys.path so 'src' can be imported
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from src.database.db import init_db, get_all_groups
 from src.utils.auth import login, signup, logout
 from src.ui.dashboard import render_dashboard
 from src.ui.issue_list import render_issue_list
-from src.ui.issue_detail import render_issue_create, render_issue_detail
+from src.ui.issue_create import render_issue_create
+from src.ui.issue_detail import render_issue_detail
 from src.ui.admin import render_admin_dashboard
 from src.ui.notices import check_and_show_notices, render_notice_history
 from src.database.db import log_activity
 
+from src.database.db import seed_sample_data
+
 # Ensure database is initialized
 if not os.path.exists('issue_tracker.db'):
     init_db()
+    seed_sample_data()
 else:
     # Just in case we need to make sure default data is in place
     init_db()
+
 
 st.set_page_config(page_title="Issue Tracker", layout="wide")
 
@@ -76,8 +85,47 @@ def render_main_app():
     # Sidebar navigation
     with st.sidebar:
         st.write(f"환영합니다, **{st.session_state['username']}**님!")
-        if st.session_state.get('is_system_admin'):
+        is_sys_admin = st.session_state.get('is_system_admin', False)
+        if is_sys_admin:
             st.markdown("*(System Admin)*")
+
+        st.divider()
+
+        from src.database.db import get_user_projects, get_all_projects, update_user_last_project
+        user_id = st.session_state.get('user_id')
+
+        # If admin, show all projects. Otherwise show only user projects.
+        if is_sys_admin:
+            projects = get_all_projects()
+        else:
+            projects = get_user_projects(user_id)
+
+        if not projects:
+            st.warning("할당된 프로젝트가 없습니다.")
+        else:
+            project_options = {p['name']: p['id'] for p in projects}
+            last_proj_id = st.session_state.get('last_project_id')
+
+            current_index = 0
+            if last_proj_id:
+                for i, p in enumerate(projects):
+                    if p['id'] == last_proj_id:
+                        current_index = i
+                        break
+
+            selected_project_name = st.selectbox(
+                "현재 프로젝트 (Current Project)",
+                list(project_options.keys()),
+                index=current_index,
+                key="sidebar_project_select"
+            )
+
+            selected_project_id = project_options[selected_project_name]
+
+            if selected_project_id != st.session_state.get('last_project_id'):
+                st.session_state['last_project_id'] = selected_project_id
+                update_user_last_project(user_id, selected_project_id)
+                st.rerun()
 
         st.divider()
 
@@ -98,7 +146,7 @@ def render_main_app():
             st.session_state['current_view'] = 'Notices'
             st.rerun()
 
-        if st.session_state.get('is_system_admin') or has_admin_projects():
+        if st.session_state.get('username') == 'admin':
             if st.button("관리자 메뉴 (Admin)", use_container_width=True):
                 st.session_state['current_view'] = 'Admin'
                 st.rerun()
