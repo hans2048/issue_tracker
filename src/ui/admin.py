@@ -4,7 +4,8 @@ import plotly.express as px
 from src.database.db import (
     get_all_users, get_all_groups, get_all_projects, create_project,
     get_project_members, add_project_member, get_user_projects,
-    get_activity_stats, create_notice, get_all_notices, update_notice_status
+    get_activity_stats, create_notice, get_all_notices, update_notice_status,
+    update_project_member_role, remove_project_member
 )
 
 def render_admin_dashboard():
@@ -48,22 +49,62 @@ def render_admin_dashboard():
 
             st.divider()
 
-            # System Admin can assign members to any project
-            st.subheader("프로젝트 멤버 할당 (Assign Members)")
+            st.subheader("프로젝트 멤버 관리 (Manage Project Members)")
             if projects and users:
                 proj_options = {p['name']: p['id'] for p in projects}
-                sel_proj = st.selectbox("프로젝트 선택", list(proj_options.keys()), key="sys_proj_sel")
+                sel_proj = st.selectbox("관리할 프로젝트 선택", list(proj_options.keys()), key="sys_proj_sel")
+                proj_id = proj_options[sel_proj]
 
+                # Show current members
+                members = get_project_members(proj_id)
+                st.write(f"**{sel_proj}** 현재 멤버 목록:")
+                if members:
+                    df_members = pd.DataFrame([dict(m) for m in members])
+                    st.dataframe(df_members, hide_index=True)
+
+                    # Update / Remove members
+                    with st.expander("멤버 권한 수정 및 삭제 (Update / Remove Members)"):
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            member_options = {m['username']: m['id'] for m in members}
+                            sel_member_to_mod = st.selectbox("멤버 선택", list(member_options.keys()), key="sys_mem_mod_sel")
+                        with col2:
+                            new_role = st.selectbox("새로운 권한", ["Admin", "Read/Write", "Read Only"], key="sys_role_mod_sel")
+                        with col3:
+                            st.write("") # spacing
+                            st.write("") # spacing
+                            if st.button("권한 수정", key="sys_update_role"):
+                                update_project_member_role(proj_id, member_options[sel_member_to_mod], new_role)
+                                st.success("권한 수정 성공")
+                                st.rerun()
+                            if st.button("멤버 삭제", key="sys_remove_member"):
+                                remove_project_member(proj_id, member_options[sel_member_to_mod])
+                                st.success("멤버 삭제 성공")
+                                st.rerun()
+                else:
+                    st.write("등록된 멤버가 없습니다.")
+
+                st.divider()
+                st.write("새 멤버 여러명 추가 (Add Multiple Members)")
                 user_options = {f"{u['username']} ({u['email']})": u['id'] for u in users}
-                sel_user = st.selectbox("사용자 선택", list(user_options.keys()), key="sys_user_sel")
 
-                role = st.selectbox("권한", ["Admin", "Developer", "User"], key="sys_role_sel")
+                # Exclude already existing members
+                existing_member_ids = [m['id'] for m in members] if members else []
+                available_user_options = {k: v for k, v in user_options.items() if v not in existing_member_ids}
 
-                if st.button("멤버 추가", key="sys_add_member"):
-                    if add_project_member(proj_options[sel_proj], user_options[sel_user], role):
-                        st.success("멤버 추가 성공")
+                sel_users = st.multiselect("사용자 선택 (다중 선택 가능)", list(available_user_options.keys()), key="sys_user_sel")
+                role = st.selectbox("권한", ["Admin", "Read/Write", "Read Only"], key="sys_role_sel")
+
+                if st.button("선택한 멤버들 추가", key="sys_add_members"):
+                    if not sel_users:
+                        st.error("추가할 사용자를 선택하세요.")
                     else:
-                        st.error("이미 할당된 사용자이거나 오류가 발생했습니다.")
+                        success_count = 0
+                        for su in sel_users:
+                            if add_project_member(proj_id, available_user_options[su], role):
+                                success_count += 1
+                        st.success(f"{success_count}명 추가 완료")
+                        st.rerun()
 
         with tabs[2]:
             st.subheader("새 공지사항 등록 (Create Notice)")
@@ -145,17 +186,49 @@ def render_admin_dashboard():
             df_members = pd.DataFrame([dict(m) for m in members])
             st.dataframe(df_members, hide_index=True)
 
+            # Update / Remove members
+            with st.expander("멤버 권한 수정 및 삭제"):
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    member_options = {m['username']: m['id'] for m in members}
+                    sel_member_to_mod = st.selectbox("멤버 선택", list(member_options.keys()), key="proj_mem_mod_sel")
+                with col2:
+                    new_role = st.selectbox("새로운 권한", ["Admin", "Read/Write", "Read Only"], key="proj_role_mod_sel")
+                with col3:
+                    st.write("") # spacing
+                    st.write("") # spacing
+                    if st.button("권한 수정", key="proj_update_role"):
+                        update_project_member_role(proj_id, member_options[sel_member_to_mod], new_role)
+                        st.success("권한 수정 성공")
+                        st.rerun()
+                    if st.button("멤버 삭제", key="proj_remove_member"):
+                        # Ensure they don't remove themselves entirely if they are the only admin
+                        if member_options[sel_member_to_mod] == user_id:
+                            st.error("자기 자신을 삭제할 수 없습니다.")
+                        else:
+                            remove_project_member(proj_id, member_options[sel_member_to_mod])
+                            st.success("멤버 삭제 성공")
+                            st.rerun()
+
         st.divider()
-        st.write("새 멤버 추가")
+        st.write("새 멤버 여러명 추가 (Add Multiple Members)")
         all_users = get_all_users()
         if all_users:
-            user_options = {f"{u['username']}": u['id'] for u in all_users}
-            sel_user = st.selectbox("사용자 선택", list(user_options.keys()))
-            role = st.selectbox("권한", ["Developer", "User"]) # Usually Project Admins don't assign other Admins easily, but we'll allow Dev/User
+            user_options = {f"{u['username']} ({u['email']})": u['id'] for u in all_users}
 
-            if st.button("멤버 추가"):
-                if add_project_member(proj_id, user_options[sel_user], role):
-                    st.success("멤버 추가 성공")
-                    st.rerun()
+            existing_member_ids = [m['id'] for m in members] if members else []
+            available_user_options = {k: v for k, v in user_options.items() if v not in existing_member_ids}
+
+            sel_users = st.multiselect("사용자 선택", list(available_user_options.keys()), key="proj_user_sel")
+            role = st.selectbox("권한", ["Read/Write", "Read Only"], key="proj_role_sel")
+
+            if st.button("선택한 멤버들 추가", key="proj_add_members"):
+                if not sel_users:
+                    st.error("추가할 사용자를 선택하세요.")
                 else:
-                    st.error("이미 할당된 사용자이거나 오류가 발생했습니다.")
+                    success_count = 0
+                    for su in sel_users:
+                        if add_project_member(proj_id, available_user_options[su], role):
+                            success_count += 1
+                    st.success(f"{success_count}명 추가 완료")
+                    st.rerun()
