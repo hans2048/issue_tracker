@@ -5,3 +5,4 @@ uploads/
 streamlit_log.txt
 .pytest_cache/
 .venv
+runvscode.bat
