@@ -615,3 +615,10 @@ def seed_sample_data():
                 status="Pending"
             )
             add_revision(issue_id, u['id'], "초기 이슈 생성")
+
+def update_user_last_project(user_id, project_id):
+    conn = get_connection()
+    c = conn.cursor()
+    c.execute("UPDATE Users SET last_project_id = ? WHERE id = ?", (project_id, user_id))
+    conn.commit()
+    conn.close()
