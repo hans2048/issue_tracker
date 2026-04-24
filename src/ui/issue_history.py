@@ -6,7 +6,8 @@ def render_issue_history(issue_id):
     st.subheader("이슈 이력 (Revision History)")
     revisions = get_revisions(issue_id)
     if revisions:
-        for rev in revisions:
+        for rev_row in revisions:
+            rev = dict(rev_row) # Convert sqlite3.Row to dict to use .get()
             rev_no = rev.get('revision_no', '')
             rev_no_str = f"[{rev_no}] " if rev_no else ""
             st.markdown(f"**{rev_no_str}{rev['modified_at']}** - {rev['modified_by_name']}: {rev['change_summary']}")
