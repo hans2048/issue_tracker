@@ -280,6 +280,11 @@ def update_issue(issue_id, **kwargs):
     conn = get_connection()
     c = conn.cursor()
 
+    try:
+        issue_id = int(issue_id)
+    except (ValueError, TypeError):
+        pass
+
     set_clause = ", ".join([f"{k} = ?" for k in kwargs.keys()])
     set_clause += ", updated_at = CURRENT_TIMESTAMP"
     values = list(kwargs.values())
@@ -362,6 +367,11 @@ def get_all_issues():
 def add_revision(issue_id, modified_by, change_summary, old_content=None, new_content=None, attachment_changes=None):
     conn = get_connection()
     c = conn.cursor()
+
+    try:
+        issue_id = int(issue_id)
+    except (ValueError, TypeError):
+        pass
 
     # Check if revision_no exists, if not ignore, if yes add it
     try:
