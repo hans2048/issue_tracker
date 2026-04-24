@@ -293,6 +293,13 @@ def update_issue(issue_id, **kwargs):
 def get_issue(issue_id):
     conn = get_connection()
     c = conn.cursor()
+
+    # Cast issue_id to int to avoid numpy.int64 types from pandas breaking sqlite query
+    try:
+        issue_id = int(issue_id)
+    except (ValueError, TypeError):
+        pass
+
     c.execute("""
         SELECT i.*, p.name as project_name, u1.username as author_name, u2.username as assignee_name
         FROM Issues i
