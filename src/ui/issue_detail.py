@@ -99,14 +99,21 @@ def render_issue_detail():
 
     st.subheader("작업 (Actions)")
 
-    # Status transitions based on role
+    # Determine the subset of roles that have "Write" equivalents in V2 schema
+    # (Since we moved to Admin, Read/Write, Read Only)
+    is_admin = (user_role == 'Admin')
+    is_dev = (user_role in ['Admin', 'Read/Write'])
+
+    # Defaults
     new_status = issue['status']
     reject_reason = ""
     assigned_to = issue['assigned_to']
 
-    if user_role == 'Admin' and issue['status'] == 'Pending':
+    # For Pending Issues: Admin can approve/reject
+    if is_admin and issue['status'] == 'Pending':
         col1, col2 = st.columns(2)
         with col1:
+            st.write("승인 시 상태가 'Open'으로 변경됩니다.")
             if st.button("승인 (Approve & Open)"):
                 new_status = 'Open'
         with col2:
@@ -118,39 +125,57 @@ def render_issue_detail():
                     new_status = 'Rejected'
                     reject_reason = reject_reason_input
 
-    elif user_role in ['Admin', 'Developer'] and issue['status'] in ['Open', 'In Progress', 'Resolved']:
-        status_options = ['Open', 'In Progress', 'Resolved', 'Closed']
-        current_index = status_options.index(issue['status']) if issue['status'] in status_options else 0
-        new_status = st.selectbox("상태 변경 (Change Status)", status_options, index=current_index)
-
-        if user_role == 'Admin':
-            members = get_project_members(issue['project_id'])
-            devs = [m for m in members if m['project_role'] in ['Admin', 'Developer']]
-            dev_options = {m['username']: m['id'] for m in devs}
-            dev_options["미할당 (Unassigned)"] = None
-
-            current_assignee = issue['assignee_name'] if issue['assignee_name'] else "미할당 (Unassigned)"
-            selected_dev = st.selectbox("담당자 할당 (Assign Developer)", list(dev_options.keys()), index=list(dev_options.keys()).index(current_assignee) if current_assignee in dev_options else 0)
-            assigned_to = dev_options[selected_dev]
-
-    # Save Changes Button
-    if new_status != issue['status'] or assigned_to != issue['assigned_to']:
-        if st.button("변경사항 저장 (Save Changes)"):
-            update_kwargs = {'status': new_status, 'assigned_to': assigned_to}
+        # Commit approval/rejection immediately for Pending issues via the buttons
+        if new_status != issue['status']:
+            update_kwargs = {'status': new_status}
             if new_status == 'Rejected':
                 update_kwargs['reject_reason'] = reject_reason
 
             update_issue(issue_id, **update_kwargs)
-
-            summary = []
-            if new_status != issue['status']:
-                summary.append(f"상태 변경: {issue['status']} -> {new_status}")
-            if assigned_to != issue['assigned_to']:
-                summary.append(f"담당자 변경")
-
-            add_revision(issue_id, user_id, ", ".join(summary))
+            add_revision(issue_id, user_id, f"상태 변경: {issue['status']} -> {new_status}")
             st.success("변경사항이 저장되었습니다.")
             st.rerun()
+
+    # For Non-Pending Issues: Admins and Read/Write users can change status and assignments
+    elif is_dev and issue['status'] in ['Open', 'In Progress', 'Resolved']:
+        with st.form("action_form"):
+            status_options = ['Open', 'In Progress', 'Resolved', 'Closed']
+            current_index = status_options.index(issue['status']) if issue['status'] in status_options else 0
+            new_status = st.selectbox("상태 변경 (Change Status)", status_options, index=current_index)
+
+            # Assignment UI logic
+            # Both Admins and Read/Write can assign issues (or you can restrict to Admin if desired)
+            members = get_project_members(issue['project_id'])
+            devs = [m for m in members if m['project_role'] in ['Admin', 'Read/Write']]
+            dev_options = {m['username']: m['id'] for m in devs}
+            dev_options["미할당 (Unassigned)"] = None
+
+            current_assignee = issue['assignee_name'] if issue['assignee_name'] else "미할당 (Unassigned)"
+            selected_dev = st.selectbox(
+                "담당자 할당 (Assign Developer)",
+                list(dev_options.keys()),
+                index=list(dev_options.keys()).index(current_assignee) if current_assignee in dev_options else 0
+            )
+            assigned_to = dev_options[selected_dev]
+
+            submitted = st.form_submit_button("변경사항 저장 (Save Changes)")
+
+            if submitted:
+                if new_status != issue['status'] or assigned_to != issue['assigned_to']:
+                    update_kwargs = {'status': new_status, 'assigned_to': assigned_to}
+                    update_issue(issue_id, **update_kwargs)
+
+                    summary = []
+                    if new_status != issue['status']:
+                        summary.append(f"상태 변경: {issue['status']} -> {new_status}")
+                    if assigned_to != issue['assigned_to']:
+                        summary.append(f"담당자 변경")
+
+                    add_revision(issue_id, user_id, ", ".join(summary))
+                    st.success("변경사항이 저장되었습니다.")
+                    st.rerun()
+                else:
+                    st.info("변경된 항목이 없습니다.")
 
     st.divider()
 
